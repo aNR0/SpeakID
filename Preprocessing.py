@@ -585,67 +585,110 @@ val_loader = DataLoader(val_dataset, batch_size=batch_size)
 len(set(y_train))
 
 
-# In[286]:
+# In[ ]:
 
 
-in_shape = (1, 256, 32)
+# Define relevant variables for the ML task
+batch_size = 64
+num_classes = 184
+learning_rate = 0.001
+num_epochs = 20
 
 
-# In[287]:
+# In[386]:
 
 
-from torch import nn, optim
-
-# Create a sequential model
-model = nn.Sequential()
-
-# Add convolutional and pooling layers
-model.add_module('Conv_1', nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(3,3)))
-model.add_module('Relu_1', nn.ReLU())
-model.add_module('MaxPool_1', nn.MaxPool2d(kernel_size=2))
-
-model.add_module('Conv_2', nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3,3)))
-model.add_module('Relu_2', nn.ReLU())
-model.add_module('MaxPool_2', nn.MaxPool2d(kernel_size=2))
-
-model.add_module('Conv_3', nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3,3)))
-model.add_module('Relu_3', nn.ReLU())
-
-model = model.to(device)
-
-
-# In[288]:
-
-
-# Add a Flatten layer to the model
-model.add_module('Flatten', nn.Flatten())
-# Add a Linear layer with 64 units and relu activation
-model.add_module('Linear_1', nn.Linear(in_features=64*3*3, out_features=64, bias=True))
-model.add_module('Relu_L_1', nn.ReLU())
-# Add the last Linear layer.
-model.add_module('Linear_2', nn.Linear(in_features=64, out_features=183, bias=True))
-model.add_module('Out_activation', nn.Softmax(-1))
-
-model = model.to(device)
-
-
-# In[289]:
+# Creating a CNN class
+class ConvNeuralNet(nn.Module):
+	#  Determine what layers and their order in CNN object 
+    def __init__(self, num_classes):
+        super(ConvNeuralNet, self).__init__()
+        self.conv_layer1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3)
+        self.conv_layer2 = nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3)
+        self.max_pool1 = nn.MaxPool2d(kernel_size = 2, stride = 2)
+        
+        self.conv_layer3 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3)
+        self.conv_layer4 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3)
+        self.max_pool2 = nn.MaxPool2d(kernel_size = 2, stride = 2)
+        
+        self.fc1 = nn.Linear(19520, 64)
+        self.relu1 = nn.ReLU()
+        self.fc2 = nn.Linear(64, num_classes)
+    
+    # Progresses data across layers    
+    def forward(self, x):
+        out = self.conv_layer1(x)
+        out = self.conv_layer2(out)
+        out = self.max_pool1(out)
+        
+        out = self.conv_layer3(out)
+        out = self.conv_layer4(out)
+        out = self.max_pool2(out)
+                
+        out = out.reshape(out.size(0), -1)
+        
+        out = self.fc1(out)
+        out = self.relu1(out)
+        out = self.fc2(out)
+        return out
 
 
-optimizer = optim.RMSprop(model.parameters(), lr=0.001) 
-crossentropy_loss = nn.CrossEntropyLoss(reduction='mean')
-num_epochs = 5
-model.train() 
+# In[387]:
 
+
+model = ConvNeuralNet(num_classes)
+
+# Set Loss function with criterion
+criterion = nn.CrossEntropyLoss()
+
+# Set optimizer with optimizer
+optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay = 0.005, momentum = 0.9)  
+
+total_step = len(train_loader)
+
+
+# In[ ]:
+
+
+# We use the pre-defined number of epochs to determine how many iterations to train the network on
 for epoch in range(num_epochs):
-    for files, labels in train_loader: 
+	#Load in the data in batches using the train_loader object
+    for i, (files, labels) in enumerate(train_loader):  
+        # Move tensors to the configured device
         files = files.to(device)
         labels = labels.to(device)
-        optimizer.zero_grad()           
-        predictions = model(files)     
-        loss = crossentropy_loss(predictions, labels) 
-        loss.backward() 
+        
+        # Forward pass
+        outputs = model(files)
+        loss = criterion(outputs, labels)
+        
+        # Backward and optimize
+        optimizer.zero_grad()
+        loss.backward()
         optimizer.step()
+
+    print('Epoch [{}/{}], Loss: {:.4f}'.format(epoch+1, num_epochs, loss.item()))
+
+
+# In[ ]:
+
+
+with torch.no_grad():
+    correct = 0
+    total = 0
+    for files, labels in train_loader:
+        files = files.to(device)
+        labels = labels.to(device)
+        outputs = model(files)
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+    
+    print('Accuracy of the network on the {} train files: {} %'.format(24000, 100 * correct / total))
+
+
+# In[ ]:
+
 
 model.eval() 
 test_acc = 0 
@@ -656,11 +699,6 @@ for files, labels in val_loader:
     accuracy = (torch.max(predictions, dim=-1, keepdim=True)[1].flatten() == labels).sum() / len(labels)
     test_acc += accuracy.item()
 test_acc /= len(val_loader)
-### END ###
 
-
-# In[ ]:
-
-
-
+print('Accuracy of the network on the {} validation files: {} %'.format(6000, test_acc))
 
